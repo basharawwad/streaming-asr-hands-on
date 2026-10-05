@@ -1,4 +1,4 @@
-# streaming-asr-by-hand
+# Hands on Basics of Streaming ASR
 
 Streaming speech recognition mechanics, implemented from scratch in PyTorch,
 with **causality treated as a testable property** rather than a design claim.
