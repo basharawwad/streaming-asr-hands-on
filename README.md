@@ -3,11 +3,6 @@
 Streaming speech recognition mechanics, implemented from scratch in PyTorch,
 with **causality treated as a testable property** rather than a design claim.
 
-```
-$ pytest
-92 passed in 3.03s
-```
-
 The usual way to learn this material is to read a paper, then read a 40,000-line
 toolkit that implements it behind nine layers of configuration. This repo is the
 other thing: one small, readable implementation of each mechanism, and for every
