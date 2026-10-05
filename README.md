@@ -46,6 +46,31 @@ python demo.py  # narrated walkthrough
 
 Only torch and pytest. No audio data, no training, no downloads.
 
+### The notebook
+
+[`notebooks/01_walkthrough.ipynb`](notebooks/01_walkthrough.ipynb) follows the
+demo section by section and draws each mechanism: masks as matrices, the
+transducer lattice with every alignment, the latency breakdown, the endpointer
+on a timeline. Each section ends with **Try this** prompts that ask you to
+change a parameter, or break a module on purpose, and predict the picture
+before re-running. The figures in this README come from it.
+
+```bash
+pip install jupyterlab matplotlib
+jupyter lab notebooks/01_walkthrough.ipynb
+```
+
+| # | Section | What it draws |
+|---|---------|---------------|
+| 1 | Causality | output change after a future perturbation; receptive field of centred vs causal conv; utterance vs running CMVN |
+| 2 | Masks | full, causal and chunked masks; per-frame lookahead; delay vs chunk size |
+| 3 | Conformer | streaming vs offline error per frame; KV cache length while streaming |
+| 4 | Transducer | all alignments on the (t, u) lattice; how `delay_penalty` moves emission earlier |
+| 5 | CTC | a peaky posteriorgram; both decode orders step by step |
+| 6 | Latency | per-word emission delay; turn latency per endpointing preset; effect of RTFx |
+| 7 | Endpointing | presets on a full utterance with a mid-sentence pause |
+| 8 | Cache | encoder vs decoder-only memory; KV-head count |
+
 ## What the demo shows
 
 **Causality is measurable, not assertable.**
@@ -55,6 +80,15 @@ Only torch and pytest. No audio data, no training, no downloads.
   centred conv (padding=K//2)  output moved by 1.157842  <- reads the future
   causal conv  (left padded)   output moved by 0.000000
 ```
+
+![Output change per frame after replacing frames 11 onwards](docs/figures/causality-leak.png)
+
+The centred conv's output moves at t=9 and t=10, before any input it should
+depend on has changed. The receptive field shows why: each row is an output
+frame, and the blue band is every input frame it reads. Anything right of the
+diagonal is the future.
+
+![Receptive field of centred vs causal depthwise convolution](docs/figures/causality-receptive-field.png)
 
 **The streaming path and the offline path are the same function.**
 
@@ -66,6 +100,12 @@ Only torch and pytest. No audio data, no training, no downloads.
 
 23 frames with chunk 4 is deliberate — a partial final chunk is where cache
 eviction bugs live.
+
+![Offline vs streaming error per frame, chunk mask vs full mask](docs/figures/conformer-streaming-equality.png)
+
+The control line is the same block run offline with a full mask. That is the
+model a streaming system can never reproduce, and the gap is five orders of
+magnitude.
 
 **Four latencies, and they are four different numbers.**
 
@@ -83,6 +123,8 @@ The number a paper reports is the first one. The number a user feels is the
 total, and the largest term is usually the endpointer — a component that is
 not in the model at all.
 
+![Turn latency broken down by component for each endpointing preset](docs/figures/turn-latency.png)
+
 **The transducer loss is indifferent to when you emit.**
 
 ```
@@ -97,6 +139,15 @@ Marginalising over alignments weights a path only by its probability, so a late
 emission scores exactly as well as an early one. Emission delay is therefore not
 a bug to fix in the decoder — it is what the loss asked for, and a delay penalty
 is how you ask for something else.
+
+<p>
+  <img src="docs/figures/transducer-lattice.png" alt="All 20 alignments on the RNN-T lattice, width proportional to posterior" width="44%">
+  <img src="docs/figures/transducer-delay-penalty.png" alt="Posterior over emission frame for three delay penalties" width="54%">
+</p>
+
+Left: every alignment of a 3-label target over 4 frames, drawn with width
+proportional to its posterior. Right: with uniform joiner outputs every
+emission frame is equally likely, until a delay penalty tilts the mass early.
 
 ## The modules
 
@@ -132,6 +183,11 @@ the average.
   per-frame lookahead: [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]
 ```
 
+![Full, causal and chunked attention masks](docs/figures/attention-masks.png)
+
+Blue right of the diagonal is lookahead and costs latency. Blue left of it is
+history and costs memory.
+
 ### `cache.py` — bounded by construction
 
 `LeftContextKVCache` with a `capacity`, and `keep_last(n)` for the eviction that
@@ -152,6 +208,11 @@ And the asymmetry that matters for architecture choice:
 A chunked encoder's cache is bounded by its left context, whatever the audio
 length. A decoder-only speech model's cache grows with the audio. That is not a
 tuning difference, it is a different cost class.
+
+<p>
+  <img src="docs/figures/cache-encoder-vs-decoder.png" alt="KV cache size vs audio length, encoder vs decoder-only" width="49%">
+  <img src="docs/figures/kv-cache-plateau.png" alt="Conformer KV cache length while streaming" width="49%">
+</p>
 
 ### `conformer.py` — a block that streams
 
@@ -200,6 +261,11 @@ smoke test on most utterances, which is exactly why it survives code review.
 that makes CTC posteriors precise about timing and useless for a confidence
 threshold.
 
+![A peaky CTC posteriorgram for "hello"](docs/figures/ctc-posteriorgram.png)
+
+The blank between the two `l` frames is what keeps them apart. Collapse first
+and you get `hello`. Strip blanks first and the two `l`s merge into `helo`.
+
 **[`docs/ctc.md`](docs/ctc.md)** is the diagrammed version: why blank exists,
 the trellis, why the skip transition is restricted, and why `T ≥ U + repeats`
 means a mislabelled short clip can poison a batch.
@@ -232,6 +298,12 @@ clause mid-sentence is exactly when you must not interrupt.
   balanced      sounds finished:   130 ms   sounds unfinished:  1280 ms
   max_accuracy  sounds finished:   520 ms   sounds unfinished:  2560 ms
 ```
+
+![Endpointing presets on an utterance with a 700 ms mid-sentence pause](docs/figures/endpointing-timeline.png)
+
+With a 700 ms pause mid-sentence, `min_latency` ends the turn while the speaker
+is still talking, whatever the final words sound like. Once the last word is
+spoken, the semantic signal decides whether `balanced` waits 128 ms or 1280 ms.
 
 `test_raising_patience_mid_call_protects_a_spoken_phone_number` is the one to
 read: during a digit string the punctuation model never sees a finished
