@@ -13,12 +13,14 @@ authors = [{ name = "Bashar Awwad Shiekh Hasan" }]
 dependencies = ["torch>=2.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+# numpy: torch warns at import without it, and filterwarnings below makes that fatal
+dev = ["pytest>=7.0", "numpy"]
 
 [tool.setuptools.packages.find]
 include = ["streaming_asr*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
 filterwarnings = ["error::UserWarning"]
